@@ -1,0 +1,558 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wedding
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - work_mem=16MB
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - wedding-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 4g
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4g
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: wedding
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 20000
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 10
+      RESERVE_POOL_TIMEOUT: 5
+      MAX_DB_CONNECTIONS: 100
+      USERS_TXT: "postgres postgres"
+    networks:
+      - wedding-net
+    depends_on:
+      db:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  redis-master:
+    image: redis:7-alpine
+    command: redis-server --bind 0.0.0.0 --protected-mode no --maxclients 100000 --appendonly yes
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 2g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2g
+
+  redis-replica-1:
+    image: redis:7-alpine
+    command: redis-server --bind 0.0.0.0 --protected-mode no --maxclients 100000 --replicaof redis-master 6379
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    depends_on:
+      - redis-master
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 2g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2g
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    restart: unless-stopped
+    volumes:
+      - ./redis-sentinel-1.conf:/usr/local/etc/redis/sentinel.conf
+    networks:
+      - wedding-net
+    depends_on:
+      - redis-master
+      - redis-replica-1
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 256m
+    cpus: 0.25
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256m
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    restart: unless-stopped
+    volumes:
+      - ./redis-sentinel-2.conf:/usr/local/etc/redis/sentinel.conf
+    networks:
+      - wedding-net
+    depends_on:
+      - redis-master
+      - redis-replica-1
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 256m
+    cpus: 0.25
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256m
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    restart: unless-stopped
+    volumes:
+      - ./redis-sentinel-3.conf:/usr/local/etc/redis/sentinel.conf
+    networks:
+      - wedding-net
+    depends_on:
+      - redis-master
+      - redis-replica-1
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 256m
+    cpus: 0.25
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256m
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - wedding-net
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 4g
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4g
+
+  load-balancer:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - wedding-net
+    ulimits:
+      nofile:
+        soft: 300000
+        hard: 300000
+    mem_limit: 512m
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512m
+
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    expose:
+      - "4000"
+    networks:
+      - wedding-net
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      vendor-service:
+        condition: service_started
+      booking-service:
+        condition: service_started
+    environment:
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: redis-master
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      UV_THREADPOOL_SIZE: 128
+      RATE_LIMIT_MAX: 1000000
+      DB_POOL_MIN: 2
+      DB_POOL_MAX: 10
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
+    mem_limit: 10g
+    cpus: 4
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 10g
+
+  auth-service:
+    build: ./auth-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      GIN_MODE: release
+      DB_POOL_SIZE: 20
+      STORAGE_ENDPOINT: minio:9000
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 30000
+        hard: 30000
+    mem_limit: 1g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1g
+
+  vendor-service:
+    build: ./vendor-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_REDIS_SENTINEL_NODES: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      SPRING_REDIS_HOST: redis-master
+      SPRING_REDIS_PORT: 6379
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 20
+      STORAGE_ENDPOINT: minio:9000
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      redis-master:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 30000
+        hard: 30000
+    mem_limit: 1.5g
+    cpus: 1.5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5g
+
+  booking-service:
+    build: ./booking-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/wedding?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      DB_POOL_MIN: 5
+      DB_POOL_MAX: 20
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 30000
+        hard: 30000
+    mem_limit: 1g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1g
+
+  admin-service:
+    build: ./admin-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/wedding?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      DB_HOST: db
+      GIN_MODE: release
+      DB_POOL_SIZE: 10
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 15000
+        hard: 15000
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  review-service:
+    build: ./review-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      DB_POOL_SIZE: 10
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 15000
+        hard: 15000
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  chat-service:
+    build: ./chat-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 30000
+      HTTP_PORT: 30001
+      DB_POOL_SIZE: 30
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}   # ✅ ADDED – removes the warning
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 2g
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+
+  social-service:
+    build: ./social-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      PORT: 4002
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://postgres:postgres@db:5432/wedding?sslmode=disable
+      DB_POOL_MIN: 5
+      DB_POOL_MAX: 20
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 15000
+        hard: 15000
+    mem_limit: 1g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1g
+
+  complaint-service:
+    build: ./complaint-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3004
+      DB_POOL_SIZE: 10
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 15000
+        hard: 15000
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  payment-service:
+    build: ./payment-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3005
+      DB_POOL_SIZE: 20
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 15000
+        hard: 15000
+    mem_limit: 1g
+    cpus: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1g
+
+  notification-service:
+    build: ./notification-service
+    restart: unless-stopped
+    networks:
+      - wedding-net
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: postgres
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      PORT: 3006
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 512m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+networks:
+  wedding-net:
+
+volumes:
+  pgdata:
+  minio_data:

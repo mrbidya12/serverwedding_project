@@ -1,0 +1,14 @@
+{
+  "name": "booking-service",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "express-validator": "^7.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.21.0",
+    "sequelize": "^6.37.8",
+    "axios": "^1.6.0"
+  }
+}

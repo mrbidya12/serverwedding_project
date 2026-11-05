@@ -1,0 +1,66 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vendor-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vendor-service
+  template:
+    metadata:
+      labels:
+        app: vendor-service
+    spec:
+      containers:
+      - name: vendor-service
+        image: gcr.io/YOUR_PROJECT_ID/vendor-service:latest
+        ports:
+        - containerPort: 8081
+        env:
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: JWT_SECRET
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DB_HOST
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-password
+              key: DB_PASSWORD
+        - name: SPRING_REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        - name: SPRING_REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        - name: SPRING_CACHE_TYPE
+          value: "none"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendor-service
+spec:
+  selector:
+    app: vendor-service
+  ports:
+  - port: 8081
+    targetPort: 8081
+  type: ClusterIP

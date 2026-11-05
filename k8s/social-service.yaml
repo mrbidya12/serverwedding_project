@@ -1,0 +1,53 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: social-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: social-service
+  template:
+    metadata:
+      labels:
+        app: social-service
+    spec:
+      containers:
+      - name: social-service
+        image: gcr.io/YOUR_PROJECT_ID/social-service:latest
+        ports:
+        - containerPort: 4002
+        env:
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: JWT_SECRET
+        - name: DATABASE_URL
+          value: "postgres://postgres:$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable"
+        - name: PORT
+          value: "4002"
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: db-password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: social-service
+spec:
+  selector:
+    app: social-service
+  ports:
+  - port: 4002
+    targetPort: 4002
+  type: ClusterIP

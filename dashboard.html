@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wedding Server Dashboard</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .service { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .up { background-color: #c8e6c9; border-left: 5px solid green; }
+        .down { background-color: #ffcdd2; border-left: 5px solid red; }
+        .unknown { background-color: #fff9c4; border-left: 5px solid orange; }
+        .refresh { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Wedding Server Dashboard</h1>
+    <button class="refresh" onclick="checkAll()">Refresh Status</button>
+    <div id="services">
+        <div class="service unknown">Loading...</div>
+    </div>
+
+    <script>
+        const gatewayUrl = 'http://localhost:4000';
+
+        async function checkService(name, url) {
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    // For health endpoint, we expect "OK"
+                    const text = await response.text();
+                    if (text === 'OK' || response.status === 200) {
+                        return 'up';
+                    }
+                }
+                return 'down';
+            } catch (e) {
+                return 'down';
+            }
+        }
+
+        async function checkAll() {
+            const servicesDiv = document.getElementById('services');
+            servicesDiv.innerHTML = '<div class="service unknown">Checking...</div>';
+
+            // Define the services and how to check them via the gateway
+            const checks = [
+                { name: 'Gateway (API)', url: `${gatewayUrl}/health`, expected: 'OK' },
+                { name: 'Auth Service', url: `${gatewayUrl}/api/users/validate`, method: 'GET', note: 'Returns 401 if no token, but that’s fine – it means the service is reachable' },
+                { name: 'Vendor Service', url: `${gatewayUrl}/api/vendors?page=0&size=1`, method: 'GET' },
+                { name: 'Booking Service', url: `${gatewayUrl}/api/bookings`, method: 'GET' },
+                // Review and admin may be disabled; add them if needed
+                { name: 'Review Service', url: `${gatewayUrl}/api/reviews/vendor/00000000-0000-0000-0000-000000000000`, method: 'GET' },
+                { name: 'Admin Service', url: `${gatewayUrl}/api/admin/vendors`, method: 'GET' }
+            ];
+
+            const results = [];
+            for (const check of checks) {
+                let status = 'unknown';
+                try {
+                    const response = await fetch(check.url);
+                    if (response.status !== 404 && response.status !== 503) {
+                        // Any response other than 404/503 means the route exists (service is up)
+                        status = 'up';
+                    } else {
+                        status = 'down';
+                    }
+                } catch (e) {
+                    status = 'down';
+                }
+                results.push({ name: check.name, status });
+            }
+
+            // Display results
+            servicesDiv.innerHTML = '';
+            for (const res of results) {
+                const div = document.createElement('div');
+                div.className = `service ${res.status}`;
+                div.innerHTML = `<strong>${res.name}</strong> - ${res.status === 'up' ? '✅ Running' : (res.status === 'down' ? '❌ Not reachable' : '⚠️ Unknown')}`;
+                servicesDiv.appendChild(div);
+            }
+        }
+
+        // Auto-check on page load
+        checkAll();
+        // Refresh every 10 seconds
+        setInterval(checkAll, 10000);
+    </script>
+</body>
+</html>

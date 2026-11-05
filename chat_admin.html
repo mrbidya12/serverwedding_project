@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Chat</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Admin Chat Test</h1>
+    <textarea id="log" rows="20" cols="80" readonly></textarea><br>
+    <input id="msg" size="50" placeholder="Message">
+    <button onclick="connect()">Connect</button>
+    <button onclick="send()">Send</button>
+    <button onclick="block()">Block Vendor</button>
+    <button onclick="unblock()">Unblock Vendor</button>
+    <script>
+        let socket;
+        const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQHRlc3QuY29tIiwiZXhwIjoxNzgyMDE1MDk5LCJyb2xlIjoiYWRtaW4iLCJ1c2VyX2lkIjoiZmY2Mzc0OGEtMGExMS00NjFmLTkzYjUtYWM5OTM1YWQ1NDRhIn0.uZG5eBwaqrNMu8nbbOaVHgX-893iMo1hOuWfOhzfuoc';
+        const vendorUserId = '750f2c5c-89c4-4913-a762-da340511e8be';
+        const vendorId = '3d182d7b-9322-43cc-9558-afbee799b915';
+
+        function connect() {
+            socket = io('ws://localhost:30000', { auth: { token } });
+            socket.on('connect', () => log('Connected as admin'));
+            socket.on('receive_message', (msg) => log('Received: ' + JSON.stringify(msg)));
+            socket.on('admin_receive_message', (msg) => log('Admin monitor: ' + JSON.stringify(msg)));
+            socket.on('message_sent', (msg) => log('Sent: ' + JSON.stringify(msg)));
+            socket.on('user_blocked', (userId) => log('User blocked: ' + userId));
+            socket.on('user_unblocked', (userId) => log('User unblocked: ' + userId));
+            socket.on('message_deleted', (msgId) => log('Message deleted: ' + msgId));
+            socket.on('error', (err) => log('Error: ' + JSON.stringify(err)));
+            log('Connecting...');
+        }
+
+        function send() {
+            const msg = document.getElementById('msg').value;
+            if (socket && msg) {
+                socket.emit('send_message', {
+                    toUserId: vendorUserId,
+                    vendorId: vendorId,
+                    content: msg
+                });
+                document.getElementById('msg').value = '';
+            }
+        }
+
+        function block() {
+            if (socket) {
+                socket.emit('block_user', { userIdToBlock: vendorUserId });
+                log('Blocking user ' + vendorUserId);
+            }
+        }
+
+        function unblock() {
+            if (socket) {
+                socket.emit('unblock_user', { userIdToUnblock: vendorUserId });
+                log('Unblocking user ' + vendorUserId);
+            }
+        }
+
+        function log(txt) {
+            const logArea = document.getElementById('log');
+            logArea.value += txt + '\n';
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+    </script>
+</body>
+</html>

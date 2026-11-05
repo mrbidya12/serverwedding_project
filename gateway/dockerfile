@@ -1,0 +1,24 @@
+﻿FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first (for better layer caching)
+COPY package*.json ./
+
+# Install production dependencies only (slimmer image)
+RUN npm install --production && npm cache clean --force
+# Copy the rest of the application
+COPY . .
+
+# Use non‑root user for security (optional)
+USER node
+
+# Expose the port the gateway listens on
+EXPOSE 4000
+
+# Set NODE_ENV (can be overridden in Kubernetes)
+ENV NODE_ENV=production
+
+# Start the server
+CMD ["node", "server.js"]

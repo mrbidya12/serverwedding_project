@@ -1,0 +1,15 @@
+﻿apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  DB_HOST: "10.0.0.2"                # Replace with Cloud SQL private IP
+  REDIS_HOST: "10.0.0.3"             # Replace with Memorystore Redis IP
+  REDIS_PORT: "6379"
+  DB_USER: "postgres"
+  DB_NAME: "wedding"
+  DB_PORT: "5432"
+  GIN_MODE: "release"
+  NODE_ENV: "production"
+  RATE_LIMIT_MAX: "100000"
+  UV_THREADPOOL_SIZE: "128"

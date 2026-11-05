@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "Complaint Service (Terminal)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/complaint-service/server.js",
+      "cwd": "${workspaceFolder}/complaint-service",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ]
+}
